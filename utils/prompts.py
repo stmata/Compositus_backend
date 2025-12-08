@@ -1,6 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Any, List
-import json
+from typing import Dict, Any
 
 def build_summary_prompt(user_data: dict) -> str:
     """
@@ -117,7 +116,7 @@ def build_match_expl_prompt(job_description: Dict,
     """
     import json
 
-    candidate_name = candidate.get("name", "Candidate")
+    candidate_name = candidate.get("NIP", "Candidate")
     profile_text = candidate.get("profile_text", "")
 
     return f"""
@@ -226,7 +225,7 @@ You MUST respect this JSON structure exactly. Only fill the array values and tex
 
 {{
   "en": {{
-    "name": "{candidate_name}",
+    "NIP": "{candidate_name}",
     "match_score": null,
     "summary": {{
       "skills_matched": [],
@@ -242,7 +241,7 @@ You MUST respect this JSON structure exactly. Only fill the array values and tex
     ]
   }},
   "fr": {{
-    "name": "{candidate_name}",
+    "NIP": "{candidate_name}",
     "match_score": null,
     "summary": {{
       "skills_matched": [],
@@ -728,5 +727,74 @@ Here is the HTML content of the page:
 </HTML>>>
 """.strip()
 
+def build_prof_summary_prompt(prof: dict) -> str:
+    """
+    Build a rich summarization prompt for professor competency mapping and HR matching.
+    This is DIFFERENT from summary.semantic (used for embeddings).
+    """
 
+    user_data = {
+        "NIP": prof.get("NIP"),
+        "Campus": prof.get("Campus"),
+        "Academic_Title": prof.get("Academic_Title"),
+        "Discipline": prof.get("Discipline"),
+        "Abstract_Competencies": prof.get("Abstract_Derived_Competencies"),
+        "Teaching_Interests": prof.get("Teaching_Interests"),
+        "Unified_Competencies": prof.get("Unified_Competencies"),
+        "Academy": prof.get("Academy"),
+        "Position_Type": prof.get("Position_Type"),
+        "AACSB_Qualification": prof.get("AACSB_Qualification"),
+        "CEFDG_Qualification": prof.get("CEFDG_Qualification"),
+    }
 
+    return f"""
+You are an expert HR summarizer specialized in academic profiles.
+You receive structured information about a university professor.
+
+Your job:
+Create a **detailed HR summary** that highlights:
+- their professional identity
+- their teaching profile
+- their research & publication strengths
+- their core competencies
+- their institutional alignment & potential roles
+- their development areas
+
+The writing style must be:
+- neutral
+- analytical
+- exhaustive
+- paragraph-based (no bullet points)
+- concrete and specific (never generic)
+
+Input data (professor):
+{user_data}
+
+Output JSON with this structure:
+
+{{
+  "identity": {{
+    "nip": "",
+    "campus": "",
+    "academic_title": "",
+    "discipline": "",
+    "position_type": ""
+  }},
+  "summary_long": "<multi-paragraph expert synthesis>",
+  "competencies": {{
+    "teaching": ["..."],
+    "research": ["..."],
+    "institutional": ["..."]
+  }},
+  "strengths": ["..."],
+  "development_needs": ["..."],
+  "recommended_roles": ["..."],
+  "alignment_axes": {{
+    "teaching": "high|med|low",
+    "research": "high|med|low",
+    "leadership": "high|med|low",
+    "institutional_outreach": "high|med|low"
+  }},
+  "confidence": "high|medium|low"
+}}
+"""

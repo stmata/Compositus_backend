@@ -3,7 +3,7 @@ import numpy as np
 from utils.db_service import MongoDBManager
 from datetime import datetime, timezone
 from services.embedding_service import _cosine 
-from services.cluster_storage_service import _save_embedding_blob, _move_embedding_blob   # si tu veux le split ainsi
+from services.Clustering.cluster_storage_service import _save_embedding_blob, _move_embedding_blob  
 import os
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score

@@ -1,18 +1,25 @@
 from fastapi import APIRouter, UploadFile, Query, File, HTTPException, Form, BackgroundTasks
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Any, Optional
-import asyncio
 from colorama import init as colorama_init, Fore, Style
 from services.employees_service import (
-    import_employee_csv,
-    run_post_import_pipeline,      
     get_all_employees,
     delete_employee_by_collab_key
 )
-from services.vacataires_services import get_all_vacataires
+from services.Vacataires.vacataires_services import get_all_vacataires, delete_vacataire_by_collab_key
 from utils.job_tracker import new_job, push_event, set_stage, set_error
-from services.job_info_service import get_all_offers
-from services.vacataires_services import delete_vacataire_by_collab_key
+from services.Offers.job_info_service import get_all_offers
+import pandas as pd
+from io import BytesIO
+from services.Professors.prof_processing import (
+    build_professors_consolidated_json,
+    get_all_professors
+)
+from services.Professors.prof_pipeline import (
+    run_prof_post_import_pipeline
+) 
+import math
+from bson import ObjectId
 
 router = APIRouter()
 colorama_init(autoreset=True)
@@ -31,6 +38,19 @@ KIND_ALIAS = {
 
 CANONICAL_KINDS = {"EAP_Professeurs", "EAP_Administratif", "EAP_EntretiensProfessionnels"}
 
+async def read_csv_to_df(upload: UploadFile) -> pd.DataFrame:
+    if upload is None:
+        return pd.DataFrame()
+    
+    content = await upload.read()
+    return pd.read_csv(
+        BytesIO(content),
+        sep=None,           
+        engine="python",    
+        dtype=str,
+        keep_default_na=False
+    )
+
 def canon_kind(raw: str) -> str:
     key = (raw or "").strip().lower().replace(" ", "")
     return KIND_ALIAS.get(key, raw)
@@ -38,100 +58,121 @@ def canon_kind(raw: str) -> str:
 def colorize(text: str, color: str, bright: bool = False) -> str:
     return f"{(Style.BRIGHT if bright else '')}{color}{text}{Style.RESET_ALL}"
 
-@router.post("/import_employees")
+@router.post("/import_employees", response_model=None)
 async def import_employees(
     files: List[UploadFile] = File(...),
     kinds: List[str] = Form(...),
     background_tasks: BackgroundTasks = None,
 ):
-    job_id = new_job()
-
     if not files:
-        set_error(job_id, "no_files")
-        push_event(job_id, {"type": "fatal", "error": "no_files"})
         raise HTTPException(400, "aucun fichier fourni.")
+
     if len(files) != len(kinds):
-        set_error(job_id, "mismatch_files_kinds")
-        push_event(job_id, {"type": "fatal", "error": "len(files) != len(kinds)"})
         raise HTTPException(400, "files et kinds doivent avoir la même longueur.")
 
-    push_event(job_id, {"type": "start", "msg": "import started", "kinds": kinds})
-    set_stage(job_id, "import", 0, {"total": len(files)})
-    set_stage(job_id, "save",   0, {"total": len(files)})
-
-    by_kind = {}
-    for f, k in zip(files, kinds):
-        k_canon = canon_kind(k)
-        by_kind.setdefault(k_canon, []).append(f)
+    job_id = new_job()
 
     total_files = len(files)
-    done_files = 0
 
-    async def _process_one_file(f: UploadFile, kind: str, idx_in_kind: int) -> Dict[str, Any]:
-        nonlocal done_files
-        filename = f.filename or "<unnamed>"
-        push_event(job_id, {"type": "file_start", "kind": kind, "file": filename})
+    push_event(job_id, {"type": "start", "msg": "import started", "kinds": kinds})
+    set_stage(job_id, "import", 0, {"total": total_files})
+    set_stage(job_id, "summaries", 0, {"total": 1})
+    set_stage(job_id, "clustering", 0, {"total": 1})
+    set_stage(job_id, "save", 0, {"total": total_files})
+    set_stage(job_id, "total", 0, {"step": "start"})
+    prof_files: list[UploadFile] = []
+    admin_files: list[UploadFile] = []
+    ent_files: list[UploadFile] = []
 
-        try:
-            content = await f.read()
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, import_employee_csv, content, filename, kind, True)
+    for f, k in zip(files, kinds):
+        if k == "EAP_Professeurs":
+            prof_files.append(f)
+        elif k == "EAP_Administratif":
+            admin_files.append(f)
+        elif k == "EAP_EntretiensProfessionnels":
+            ent_files.append(f)
 
-            done_files += 1
-            pct = int(done_files * 100 / total_files)
+    if not prof_files:
+        set_error(job_id, "no_prof_files")
+        push_event(job_id, {"type": "fatal", "error": "no_prof_files"})
+        raise HTTPException(400, "aucun fichier professeur fourni (EAP_Professeurs).")
 
-            push_event(job_id, {"type": "file_ok", "kind": kind, "file": filename})
+    main_prof: UploadFile | None = None
+    pub_file: UploadFile | None = None
+    research_file: UploadFile | None = None
+    teaching_file: UploadFile | None = None
 
-            set_stage(job_id, "import", pct, {"done": done_files, "total": total_files})
-            set_stage(job_id, "save",   pct, {"done": done_files, "total": total_files})
-            push_event(job_id, {"type": "file_saved", "kind": kind, "file": filename, "pct": pct})
+    for f in prof_files:
+        name = (f.filename or "").lower()
+        if "publication" in name:
+            pub_file = f
+        elif "research" in name or "iresearch" in name:
+            research_file = f
+        elif "teaching" in name:
+            teaching_file = f
+        else:
+            main_prof = f
 
-            return {"file": filename, "kind": kind, "success": True, "error": ""}
+    if not (main_prof and pub_file and research_file and teaching_file):
+        set_error(job_id, "missing_prof_csv")
+        push_event(
+            job_id,
+            {
+                "type": "fatal",
+                "error": "Missing one or more professor CSV files (prof, publication, research, teaching).",
+            },
+        )
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "detail": "Missing one or more professor CSV files (prof, publication, research, teaching).",
+                "job_id": job_id,
+            },
+        )
+    push_event(job_id, {"type": "file_start", "kind": "EAP_Professeurs", "file": main_prof.filename})
 
-        except Exception as e:
-            done_files += 1
-            pct = int(done_files * 100 / total_files)
+    df_prof = await read_csv_to_df(main_prof)
+    df_pub = await read_csv_to_df(pub_file)
+    df_research = await read_csv_to_df(research_file)
+    df_teaching = await read_csv_to_df(teaching_file)
+    set_stage(job_id, "import", 100, {"done": 4, "total": 4})
+    push_event(job_id, {
+        "type": "file_saved",
+        "kind": "EAP_Professeurs",
+        "file": main_prof.filename,
+        "pct": 100,
+    })
 
-            push_event(job_id, {"type": "file_err", "kind": kind, "file": filename, "error": str(e)})
+    result_save = build_professors_consolidated_json(
+        df_prof,
+        df_pub,
+        df_research,
+        df_teaching,
+    )
 
-            set_stage(job_id, "import", pct, {"done": done_files, "total": total_files})
-            set_stage(job_id, "save",   pct, {"done": done_files, "total": total_files})
+    set_stage(
+        job_id,
+        "save",
+        100,
+        {"ok": result_save["inserted"], "failed": 0, "total": result_save["total"]},
+    )
+    push_event(job_id, {"type": "import_end", "ok": result_save["inserted"], "failed": 0})
 
-            return {"file": filename, "kind": kind, "success": False, "error": str(e)}
+    set_stage(job_id, "total", 33, {"step": "import_done"})
 
-    async def _process_kind(kind: str, fs: List[UploadFile]) -> Dict[str, Any]:
-        tasks = [asyncio.create_task(_process_one_file(f, kind, i)) for i, f in enumerate(fs, start=1)]
-        results = await asyncio.gather(*tasks)
-        ok = sum(1 for r in results if r["success"])
-        return {"kind": kind, "results": results, "ok": ok, "failed": len(fs)-ok}
-
-    per_kind_results = await asyncio.gather(*[
-        asyncio.create_task(_process_kind(kind, fs)) for kind, fs in by_kind.items()
-    ])
-
-    all_files = [r for kind_res in per_kind_results for r in kind_res["results"]]
-    success = sum(1 for r in all_files if r["success"])
-    failed = len(all_files) - success
-
-    set_stage(job_id, "import", 100, {"ok": success, "failed": failed, "total": len(all_files)})
-    set_stage(job_id, "save",   100, {"ok": success, "failed": failed, "total": len(all_files)})
-
-    push_event(job_id, {"type": "import_end", "ok": success, "failed": failed})
-
-    kinds_processed = [kr["kind"] for kr in per_kind_results if kr["ok"] > 0]
-
-    if background_tasks and kinds_processed:
-        push_event(job_id, {"type": "pipeline_scheduled", "kinds": kinds_processed})
-        background_tasks.add_task(run_post_import_pipeline, kinds_processed, job_id)
-    else:
-        push_event(job_id, {"type": "pipeline_skipped", "reason": "no_kind_ok"})
-
+    push_event(job_id, {"type": "pipeline_scheduled", "kinds": ["EAP_Professeurs"]})
+    background_tasks.add_task(run_prof_post_import_pipeline, job_id=job_id)
     return JSONResponse(
         status_code=200,
         content={
-            "success": failed == 0 and success > 0,
-            "summary": {"total": len(all_files), "success": success, "failed": failed},
-            "kinds": kinds_processed,
+            "success": True,
+            "summary": {
+                "total": result_save["total"],
+                "success": result_save["inserted"],
+                "failed": 0,
+            },
+            "kinds": ["EAP_Professeurs"],
             "job_id": job_id,
         },
     )
@@ -194,32 +235,69 @@ async def delete_employee(
         detail=f"No employee/vacataire found matching matricule='{matricule_collaborateur}' and/or full_name='{full_name}'."
     )
 
+def sanitize_for_json(obj):
+    """
+    Nettoie récursivement un objet pour être JSON-safe :
+    - remplace NaN / inf par None
+    - convertit ObjectId en str
+    """
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+
+    if isinstance(obj, ObjectId):
+        return str(obj)
+
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+
+    if isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+
+    try:
+        import numpy as np
+        if isinstance(obj, (np.floating, np.integer)):
+            val = obj.item()
+            if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+                return None
+            return val
+    except Exception:
+        pass
+
+    return obj
+
 @router.get("/people_overview")
 def list_all_people_and_offers(email: Optional[str] = None):
-    employees = get_all_employees()
+    professors_data = get_all_professors()   
     vacataires_data = get_all_vacataires(compact=True)
     offers_data = get_all_offers(email=email)
 
-    employees = employees.get("items", employees) if isinstance(employees, dict) else employees
+    professors = professors_data.get("items", professors_data) if isinstance(professors_data, dict) else professors_data
     vacataires = vacataires_data.get("items", vacataires_data) if isinstance(vacataires_data, dict) else vacataires_data
     offers = offers_data.get("items", offers_data) if isinstance(offers_data, dict) else offers_data
 
-    if not isinstance(employees, list):
-        employees = [employees]
+    if not isinstance(professors, list):
+        professors = [professors]
     if not isinstance(vacataires, list):
         vacataires = [vacataires]
     if not isinstance(offers, list):
         offers = [offers]
+    raw_content = {
+            "internal": professors,
+            "vacataires": vacataires,
+            "offers": offers,
+            "total_internal": len(professors),
+            "total_vacataires": len(vacataires),
+            "total_offers": len(offers),
+            "total_all": len(professors) + len(vacataires) + len(offers),
+    }
+
+    safe_content = sanitize_for_json(raw_content)
 
     return JSONResponse(
         status_code=200,
-        content={
-            "internal": employees,
-            "vacataires": vacataires,
-            "offers": offers,
-            "total_internal": len(employees),
-            "total_vacataires": len(vacataires),
-            "total_offers": len(offers),
-            "total_all": len(employees) + len(vacataires) + len(offers),
-        },
+        content=safe_content,
     )
+
+

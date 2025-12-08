@@ -5,9 +5,6 @@ from services.llm_service import API_KEY, API_VER, API_BASE
 from openai import AzureOpenAI
 import os
 from dotenv import load_dotenv
-from utils.config import (
-    EMBED_BATCH_SIZE
-)
 from azure.storage.blob import BlobServiceClient
 import io
 from azure.storage.blob.aio import BlobServiceClient as AioBlobServiceClient
@@ -20,7 +17,7 @@ API_KEY = os.getenv("API_KEY")
 API_VERSION = os.getenv("OPENAI_API_VERSION")
 API_BASE = (os.getenv("API_BASE") or "").rstrip("/")
 AZURE_EMBED_DEPLOYMENT = os.getenv("AZURE_DEPLOYMENT_EMBEDDINGS", "text-embedding-3-large")
-
+EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE"))
 AZURE_BLOB_CONNECTION_STRING = os.getenv("AZURE_BLOB_CONNECTION_STRING")
 EMB_CONTAINER = os.getenv("EMB_CONTAINER", "employee-embeddings")
 

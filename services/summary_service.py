@@ -1,4 +1,4 @@
-from utils.prompts import build_summary_prompt
+from utils.prompts import build_summary_prompt, build_prof_summary_prompt
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import re
@@ -10,11 +10,13 @@ from colorama import Fore, Style
 from dotenv import load_dotenv
 from utils.db_service import MongoDBManager
 from utils.job_tracker import set_stage
+from threading import Lock
 
 load_dotenv()
 mongo = MongoDBManager()
 MASTER_COLL = mongo.get_collection("employees")
 MASTER_ID = "EAP_Employees"
+profs = mongo.get_collection("Professeurs")
 
 API_KEY = os.getenv("API_KEY")
 API_VERSION = os.getenv("OPENAI_API_VERSION")
@@ -173,3 +175,130 @@ def summarize_sources_in_batches(
                             {"processed": processed, "total": total_todo}
                         )
     return {"ok": total_ok, "err": total_err, "total": total_todo, "processed": processed}
+
+
+
+
+
+def _llm_summarize_prof(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Appelle le LLM avec build_summary_prompt(user_data)
+    et retourne un JSON parsé.
+    """
+    user_data = {
+        "NIP": doc.get("NIP"),
+        "Campus": doc.get("Campus"),
+        "Academic_Title": doc.get("Academic_Title"),
+        "Discipline": doc.get("Discipline"),
+        "Abstract_Derived_Competencies": doc.get("Abstract_Derived_Competencies"),
+        "Teaching_Interests": doc.get("Teaching_Interests"),
+        "Unified_Competencies": doc.get("Unified_Competencies"),
+        "Academy": doc.get("Academy"),
+        "Position_Type": doc.get("Position_Type"),
+        "AACSB_Qualification": doc.get("AACSB_Qualification"),
+        "CEFDG_Qualification": doc.get("CEFDG_Qualification"),
+    }
+
+    prompt = build_prof_summary_prompt(user_data)
+
+    resp = client.chat.completions.create(
+        model=AZURE_DEPLOYMENT_SUMMARY,
+        messages=[
+            {"role": "system", "content": "You are an expert HR summarizer."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.2,
+    )
+
+    text = resp.choices[0].message.content
+    try:
+        return json.loads(text)
+    except Exception:
+        return {"error": "invalid_json_from_llm", "raw": text}
+
+def summarize_professors_in_batches(
+    max_workers: int = 5,    
+    group_size: int = 10,    
+    job_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Résume tous les profs en groupes de `group_size`,
+    avec au plus `max_workers` groupes en parallèle.
+
+    - Chaque groupe traite ~10 profs séquentiellement.
+    - Au max `max_workers` groupes tournent en même temps.
+    - Met à jour `summary.llm` dans Mongo.
+    - Met à jour la step 'summaries' pour le frontend.
+    """
+
+    cursor = profs.find(
+        {},
+        {
+            "_id": 1,
+            "NIP": 1,
+            "Campus": 1,
+            "Academic_Title": 1,
+            "Discipline": 1,
+            "Abstract_Derived_Competencies": 1,
+            "Teaching_Interests": 1,
+            "Unified_Competencies": 1,
+            "Academy": 1,
+            "Position_Type": 1,
+            "AACSB_Qualification": 1,
+            "CEFDG_Qualification": 1,
+        },
+    )
+
+    docs = list(cursor)
+    total = len(docs)
+    done = 0
+    errors = 0
+    lock = Lock()
+
+    if total == 0:
+        if job_id:
+            set_stage(job_id, "summaries", 100, {"done": 0, "total": 0})
+        return {"total": 0, "summarized": 0, "errors": 0}
+
+    groups: List[List[dict]] = [
+        docs[i : i + group_size] for i in range(0, total, group_size)
+    ]
+
+    def process_group(group_docs: List[dict]) -> None:
+        nonlocal done, errors
+        local_nips: List[str] = []
+
+        for doc in group_docs:
+            nip = doc.get("NIP")
+            try:
+                summary_json = _llm_summarize_prof(doc)
+
+                profs.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"summary.llm": summary_json}},
+                    upsert=False,
+                )
+
+                local_nips.append(str(nip))
+
+                with lock:
+                    done += 1
+                    if job_id and total > 0:
+                        pct = int(done * 100 / total)
+                        set_stage(job_id, "summaries", pct, {
+                            "done": done,
+                            "total": total,
+                        })
+
+            except Exception as e:
+                with lock:
+                    errors += 1
+
+        
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(process_group, g) for g in groups]
+        for fut in as_completed(futures):
+            fut.result()
+
+    return {"total": total, "summarized": done, "errors": errors}

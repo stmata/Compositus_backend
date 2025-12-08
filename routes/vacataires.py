@@ -5,8 +5,8 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import JSONResponse
 from colorama import init as colorama_init, Fore
 from utils.job_tracker import new_job, push_event, set_stage, set_done, set_error
-from services.vacataires_services import _exists_pdf_filename, run_vacataire_pipeline_for_one_file, ingest_vacataire_cv, list_vacataires
-from services.vacataires_services import recluster_vacataires as recluster_vacataires_service
+from services.Vacataires.vacataires_services import _exists_pdf_filename, run_vacataire_pipeline_for_one_file, ingest_vacataire_cv, list_vacataires
+from services.Vacataires.vacataires_services import recluster_vacataires as recluster_vacataires_service
 
 router = APIRouter()
 colorama_init(autoreset=True)

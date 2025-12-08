@@ -6,6 +6,13 @@ from services.embedding_service import _cosine
 def rank_candidates_for_job(job_vec: np.ndarray,
                             candidates: List[Tuple[str, str, str, np.ndarray, str]],
                             top_k: int = 50) -> List[Dict[str, Any]]:
+    try:
+        top_k = int(top_k)
+    except (TypeError, ValueError):
+        top_k = 50
+
+    if top_k <= 0:
+        return []
     scored = []
     for src, ck, name, v, txt in candidates:
         score = _cosine(job_vec, v)

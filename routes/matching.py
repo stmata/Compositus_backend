@@ -1,17 +1,9 @@
 from __future__ import annotations
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
 from typing import Optional, List
-from colorama import init as colorama_init, Fore, Style
-from services.matching_service import match_pipeline_async
+from services.Matching.matching_service import match_pipeline_async
 from services.parsing_service import parse_job_file_with_service_async 
 from utils.job_tracker import new_job, set_stage, push_event, set_error, set_done
-
-router = APIRouter()
-colorama_init(autoreset=True)
-
-def _c(txt: str, color: str = Fore.WHITE, bright: bool = False) -> str:
-    return f"{Style.BRIGHT if bright else ''}{color}{txt}{Style.RESET_ALL}"
-
 
 router = APIRouter()
 

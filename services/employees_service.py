@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 from openai import AzureOpenAI
 from colorama import init as colorama_init, Fore, Style
 from utils.db_service import MongoDBManager
-from services.clustering_service import cluster_and_upload_to_blob
-from services.cluster_storage_service import delete_employee_embedding
+from services.Clustering.clustering_service import cluster_and_upload_to_blob
+from services.Clustering.cluster_storage_service import delete_employee_embedding
 from utils.job_tracker import push_event, set_stage, set_done, set_error
 from utils.utils import (
     _norm,
@@ -24,7 +24,7 @@ colorama_init(autoreset=True)
 
 mongo = MongoDBManager()
 MASTER_COLL = mongo.get_collection("employees")
-USERS_COLL  = mongo.get_collection("users")
+USERS_COLL  = mongo.get_collection("Admins")
 MASTER_ID = "EAP_Employees"
 
 API_KEY = os.getenv("API_KEY")
@@ -64,8 +64,6 @@ SRC_COLOR = {
     "EAP_EntretiensProfessionnels": Fore.YELLOW,
     "EAP_Autres": Fore.WHITE,
 }
-
-
 
 def import_employee_csv(
     file_content: bytes,

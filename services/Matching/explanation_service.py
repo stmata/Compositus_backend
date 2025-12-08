@@ -17,23 +17,18 @@ def explain_topN(job_info: Dict[str, Any], filtered_ranked: List[Dict[str, Any]]
 
 
     for r in filtered_ranked:
-        nm = r.get("collab_key") or r.get("name") or "Unknown"
-
+        nm = r.get("collab_key") or r.get("NIP") or "Unknown"
         emb_score_norm01 = float(r.get("score", 0.0))
-
         profile_text = r.get("profile_text", "") or ""
 
         candidate_payload = {
-            "name": nm,
+            "NIP": nm,
             "profile_text": profile_text,
-            "raw": r,  
         }
-
         prompt = build_match_expl_prompt(
             job_description=job_info,
             candidate=candidate_payload,
         )
-
         try:
             raw = _llm(prompt)
             js = _extract_json(raw)
@@ -47,7 +42,7 @@ def explain_topN(job_info: Dict[str, Any], filtered_ranked: List[Dict[str, Any]]
             lang_obj = js.get(lang)
             if not isinstance(lang_obj, dict):
                 lang_obj = {
-                    "name": nm,
+                    "NIP": nm,
                     "summary": {
                         "skills_matched": [],
                         "skills_missing": [],
@@ -59,13 +54,11 @@ def explain_topN(job_info: Dict[str, Any], filtered_ranked: List[Dict[str, Any]]
                     "reasoning": "",
                     "suggestions": [],
                 }
-            lang_obj["name"] = nm
             js[lang] = lang_obj
 
         out.append({
-            "name": nm,
+            "NIP": nm,
             "embedding_score": emb_score_norm01,   
             "llm": js,                            
         })
-
     return out

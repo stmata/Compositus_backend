@@ -160,3 +160,6 @@ def row_to_struct(row: pd.Series, idx: Dict[str, Optional[str]]) -> Optional[Dic
     if matricule_val is not None:
         out["matricule_collaborateur"] = matricule_val
     return out
+
+
+

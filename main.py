@@ -41,4 +41,3 @@ app.include_router(matching_router)
 app.include_router(employees_read_router)
 app.include_router(jobs_stream_router)
 app.include_router(vacataires_router)
-

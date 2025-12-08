@@ -102,9 +102,22 @@ def set_stage(job_id: str, name: str, percent: int, meta: dict | None = None):
 
 def set_done(job_id: str, delete_after: bool = False, drop_mode: str = "none"):
     _inc_seq_and_push(job_id, update={"state": "done"}, event=None)
+    _fire_and_forget(_cleanup_job(job_id))
 
 def set_error(job_id: str, msg: str):
     _inc_seq_and_push(job_id, update={"state": "error", "error": str(msg)}, event=None)
 
 def history_for_job(job_id: str) -> dict:
     return _snapshot(job_id)
+
+async def _cleanup_job(job_id: str) -> None:
+    """
+    Suppression OBLIGATOIRE de toute la collection 'jobs'
+    quelques secondes après la fin du traitement.
+    """
+    await asyncio.sleep(5)
+
+    try:
+        JOBS.drop()
+    except Exception as e:
+        print(f"[JOB_CLEANUP] ERROR dropping collection: {e}")

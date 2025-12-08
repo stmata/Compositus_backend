@@ -9,18 +9,18 @@ from dotenv import load_dotenv
 from fastapi import HTTPException, UploadFile
 from services.embedding_service import _download_blob_to_ndarray
 from services.parsing_service import parse_one_file_async
-from services.clustering_service import (
+from services.Clustering.clustering_service import (
     _build_embed_model as build_embed_model,
     _embed_texts as embed_vectors,
     build_cv_embedding_text,
     _auto_kmeans_vac,
 )
-from services.cluster_storage_service import upsert_single_embedding_and_label2
+from services.Clustering.cluster_storage_service import upsert_single_embedding_and_label2
 from utils.db_service import MongoDBManager
 from utils.job_tracker import push_event, set_done, set_error
-from services.vacataires_blob_service import _azure_delete_by_path, _azure_delete_pdf, _azure_upload_pdf_bytes
-from services.vacataires_repository import _exists_collab_key, _exists_pdf_filename
-from services.vacataires_llm_service import _llm_cv_extract, _pick_collab_key
+from services.Vacataires.vacataires_blob_service import _azure_delete_by_path, _azure_delete_pdf, _azure_upload_pdf_bytes
+from services.Vacataires.vacataires_repository import _exists_collab_key, _exists_pdf_filename
+from services.Vacataires.vacataires_llm_service import _llm_cv_extract, _pick_collab_key
 
 load_dotenv()
 colorama_init(autoreset=True)

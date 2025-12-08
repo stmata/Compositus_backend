@@ -5,12 +5,11 @@ from llama_index.core.node_parser import SemanticSplitterNodeParser
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 import os
 from dotenv import load_dotenv
-from utils.config import (
-    MAX_CHUNKS, TARGET_CHARS
-)
 
 load_dotenv()
 AZURE_EMBED_DEPLOYMENT = os.getenv("AZURE_DEPLOYMENT_EMBEDDINGS", "text-embedding-3-large")
+MAX_CHUNKS = int(os.getenv("MAX_CHUNKS"))
+TARGET_CHARS = int(os.getenv("TARGET_CHARS"))
 
 def _semantic_chunks(text: str,
                      max_chunks: int = MAX_CHUNKS,

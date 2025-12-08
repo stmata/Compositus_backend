@@ -5,7 +5,7 @@ from colorama import init as colorama_init, Fore, Style
 
 mongo = MongoDBManager()
 MASTER_COLL = mongo.get_collection("employees")
-USERS_COLL  = mongo.get_collection("users")
+USERS_COLL  = mongo.get_collection("Admins")
 
 def mark_all_users_update_start():
     """Met à jour tous les users: update_data=true, supprime update_error."""

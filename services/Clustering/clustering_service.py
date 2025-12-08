@@ -11,11 +11,11 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from services.embedding_service import _cosine
 
-from services.cluster_storage_service import (
+from services.Clustering.cluster_storage_service import (
     _save_embedding_blob,
     _cleanup_source_clusters,
 )
-from services.cluster_meta_service import (
+from services.Clustering.cluster_meta_service import (
     _auto_kmeans,
     _load_meta
 )
@@ -176,8 +176,6 @@ def cluster_and_upload_to_blob(
         deleted = 0
         if cleanup_before_write:
             deleted = _cleanup_source_clusters(src)
-            if deleted:
-                print(_c(f"{src}: deleted {deleted} old blob(s)", Fore.YELLOW))
 
         set_items: List[Tuple[str, Any]] = []
         for (ck, _), lbl, vec in zip(entries_src, labels.tolist(), vectors.tolist()):

@@ -101,3 +101,8 @@ def load_candidate_vectors(department: str) -> List[Tuple[str, str, str, Optiona
             profile_text = _best_text_from_node(node)
             out.append((src_key, ck, name, vec, profile_text))
     return out
+
+
+
+
+

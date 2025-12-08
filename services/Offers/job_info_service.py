@@ -5,9 +5,6 @@ from utils.console import _c
 from services.llm_service import _llm, _extract_json
 from services.chunking_service import _semantic_chunks
 from utils.prompts import job_info_prompt
-from utils.config import (
-    CTX_MAX_TOKENS, MAX_CHUNKS, TARGET_CHARS, CHUNK_PREVIEW_MAX,
-)
 from utils.db_service import MongoDBManager
 import os, re, io, hashlib, mimetypes
 from datetime import datetime, timezone
@@ -20,6 +17,10 @@ from services.embedding_service import adownload_blob_to_ndarray
 
 mongo = MongoDBManager()
 JOBS = mongo.get_collection("jobs_offers")
+CTX_MAX_TOKENS = int(os.getenv("CTX_MAX_TOKENS")) 
+MAX_CHUNKS = int(os.getenv("MAX_CHUNKS"))
+TARGET_CHARS = int(os.getenv("TARGET_CHARS"))
+CHUNK_PREVIEW_MAX = int(os.getenv("CHUNK_PREVIEW_MAX"))
 
 def collapse_whitespace(s: str) -> str:
     s = (s or "").replace("\x00", " ")
@@ -537,9 +538,7 @@ async def load_job_offer_assets_by_filename(filename: str) -> Tuple[Dict[str, An
     job_vec: np.ndarray = vec  
 
     job_info: Dict[str, Any] = doc.get("job_info") or {}
-    if not job_info:
-        print(_c("job_info manquant dans Mongo — on poursuit avec embedding seul", Fore.YELLOW))
-
+    
     job_text_preview: str = doc.get("job_text_preview") or ""
     return job_info, job_vec, job_text_preview
 

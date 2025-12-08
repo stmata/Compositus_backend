@@ -2,12 +2,11 @@ from __future__ import annotations
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from utils.db_service import MongoDBManager
-
 from dotenv import load_dotenv
 
 load_dotenv()
 mongo = MongoDBManager()
-users = mongo.get_collection("users")
+users = mongo.get_collection("Admins")
 vacataires = mongo.get_collection("vacataires")
 
 def save_to_user_upload_history(email: str,
